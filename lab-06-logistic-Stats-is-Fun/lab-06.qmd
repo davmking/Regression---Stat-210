@@ -1,0 +1,165 @@
+---
+title: "Lab 06: Adelie Penguins"
+subtitle: "Logistic regression intro"
+author: "Stats is 'Fun' - Dav King, Luke Thomas, Thomas Barker, Harry Liu"
+date: "`r Sys.Date()`"
+format: pdf
+editor: visual
+---
+
+## Setup
+
+Load packages
+
+```{r load-packages}
+#| message: false
+#| warning: false
+
+library(tidyverse)
+library(tidymodels)
+library(palmerpenguins)
+library(knitr)
+library(patchwork)
+
+penguins <- penguins %>% 
+  mutate(adelie = factor(if_else(species == "Adelie", 1, 0)))
+penguins %>% 
+  count(adelie, species)
+```
+
+### **\[Select this page for the "Workflow & formatting" in Gradescope.** \]
+
+\pagebreak
+
+## Exercises
+
+### Exercise 1
+
+```{r Ex-1}
+tot <- ggplot(penguins, aes(x = island, fill = adelie)) +
+  geom_bar() +
+  theme_bw() +
+  labs(x = "Island", y = "Number of Penguins", fill = "Adelie?",
+       title = "Number of Adelie Penguins") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+perc <- ggplot(penguins, aes(x = island, fill = adelie)) +
+  geom_bar(position = "fill") +
+  theme_bw() +
+  labs(x = "Island", y = "Number of Penguins", fill = "Adelie?",
+       title = "Proportion of Adelie Penguins") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+tot
+perc
+```
+
+One thing we observe is that there are roughly comparable raw numbers of Adelie penguins on every island, even though the numbers of total penguins across species differ greatly by island. Thus, Biscoe island penguins are only \~25% adelie, while Dream island penguins are close to 50% Adelie and 100% of Torgersen island penguins are Adelie.
+
+\pagebreak
+
+### Exercise 2
+
+```{r Ex-2}
+penguins %>% 
+  count(island, adelie) %>% 
+  pivot_wider(names_from = adelie, values_from = n, values_fill = 0)
+```
+
+When a value is missing (or `NA`), `values_fill` here specifies that it should replace all of those missing values with a 0. That means that, for Torgersen island, the number of non-adelie penguins (which was 0, or `NA`), should be filled with the value 0.
+
+...
+
+\pagebreak
+
+### Exercise 3
+
+```{r odds-prob}
+penguins |>
+  filter(island == 'Biscoe') |>
+  count(adelie) |>
+  mutate(prob = round(n / sum(n), 3)) |>
+  mutate(odds = round(prob / (1 - prob), 3))
+
+```
+
+The **probability** a randomly selected penguin is from the Adelie species if it was recorded on Biscoe island is 0.262, and the **odds** a randomly selected penguin is from the Adelie species if it was recorded on Biscoe island is 0.355.
+
+\pagebreak
+
+### Exercise 4
+
+```{r log-model}
+
+adelie_fit <- logistic_reg() |>
+  set_engine("glm") |>
+  fit(adelie ~ island, data = penguins, family = "binomial")
+
+tidy(adelie_fit) |> kable(digits = 3)
+```
+
+The predicted odds of a penguin being from the Adelie species if it was recorded on Biscoe island is $e^\text{-1.036}$ = 0.356, and the predicted odds of a penguin being from the Adelie species if it was recorded on Dream island is $e^\text{-1.036 + 0.842}$ = 0.824.
+
+\pagebreak
+
+### Exercise 5
+
+```{r bill-depth-viz}
+ggplot(data = penguins, aes(x = bill_depth_mm, y = adelie)) +
+  geom_boxplot() +
+  labs(title = "Relationship Between Bill Depth and Adelie Penguins",
+       x = "Bill Depth (mm)",
+       y = "Adelie")
+```
+
+Observation:
+
+Adelie penguins appear to have deeper bills, as the minimum, median, and maximum bill lengths of Adelie penguins are greater than the minimum, median, and maximum bill lengths of non-Adelie penguins.
+
+\pagebreak
+
+### Exercise 6
+
+```{r bill-depth-model}
+depth_fit <- logistic_reg() |>
+  set_engine("glm") |>
+  fit(adelie ~ island + bill_depth_mm, data = penguins, family = "binomial")
+
+tidy(depth_fit) |> kable(digits = 3)
+```
+
+$$
+\log\Big(\frac{\hat{\pi_i}}{1-\hat{\pi_i}}\Big) = -14.676 + -0.892 \times islandDream + 18.132 \times islandTorgersen + 0.836 \times bill\_depth\_mm
+$$
+
+\pagebreak
+
+### Exercise 7
+
+```{r change}
+log_odds <- -14.676 - 0.892*1 + 0.836*17
+log_odds_new <- -14.676 - 0.892*1 + 0.836*20
+log_odds_change <- log_odds_new - log_odds
+log_odds_change
+exp(log_odds_change)
+```
+
+The log-odds of being from the Adelie species are expected to be 2.508 more for those penguins with bill depth of 20 mm compared to those with bill depth of 17 mm, given that the penguins were recorded on the Dream island and all else equal.
+
+The odds of being from the Adelie species for those penguins with bill depth of 20 mm are expected to be 12.28 (exp(2.508)) times the odds for those penguins with bill depth of 17 mm, given that the penguins were recorded on the Dream island and all else equal.
+
+\pagebreak
+
+### Exercise 8
+
+```{r change2}
+log_odds2 <- -14.676 + 0.836*18
+log_odds2_new <- -14.676 - 0.892*1 + 0.836*21
+log_odds2_change <- log_odds2_new - log_odds2
+log_odds2_change
+exp(log_odds2_change)
+```
+
+The log-odds of being from the Adelie species are expected to be 1.616 more for those penguins with bill depth of 21 mm recorded on Dream island compared to those with bill depth of 18 mm recorded on Biscoe island, given all else equal.
+
+The odds of being from the Adelie species for those penguins with bill depth of 21 mm recorded on Dream island are expected to be 5.03 (exp(1.616)) times the odds for those penguins with bill depth of 18 mm recorded on Biscoe island, given all else equal.

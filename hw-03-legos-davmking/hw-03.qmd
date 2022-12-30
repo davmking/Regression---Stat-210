@@ -1,0 +1,220 @@
+---
+title: "HW 03: Multiple linear regression, Part 2"
+author: "Dav King"
+date: "`r Sys.Date()`"
+format: pdf
+editor: visual
+---
+
+## Set up
+
+```{r load-packages-data}
+#| message: false
+#| warning: false
+
+library(tidyverse)
+library(tidymodels)
+library(knitr)
+library(rms)
+library(patchwork)
+
+legos <- read_csv("data/lego-sample.csv") |>
+  select(Size, Pieces, Theme, Amazon_Price, Year, Pages) |>
+  drop_na()
+```
+
+::: callout-note
+Select this page for Workflow & formatting".
+:::
+
+\pagebreak
+
+## Exercises
+
+### Exercise 1
+
+There are two main problems with dropping observations with missing values from our dataset. First, we are throwing away data that could possibly be used to make our analysis more robust, which is never ideal. Second, we don't know whether there was any trend in the data that caused them to have missing values. In other words, the observations that we're dropping are not necessarily independent of one another, and so we may be losing valuable pieces of information. This may reduce the generalizability of our conclusions - since our sample is technically only complete cases, our findings can only be generalized to complete cases as well. This severely limits what our findings actually apply to in the population.
+
+\pagebreak
+
+### Exercise 2
+
+```{r ex-2}
+pieces <- ggplot(legos, aes(x = Pieces)) +
+  geom_histogram(color = "white") +
+  theme_bw() +
+  labs(x = "Number of Pieces", y = "Number of Lego Sets",
+       title = "Pieces in Lego Sets") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+size <- ggplot(legos, aes(x = Size)) +
+  geom_bar() +
+  theme_bw() +
+  labs(x = "Size", y = "Number of Lego Sets",
+       title = "Size of Pieces") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+year <- ggplot(legos, aes(x = Year)) +
+  geom_bar() +
+  theme_bw() +
+  labs(y = "Number of Lego Sets", title = "Year of Production") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+pages <- ggplot(legos, aes(x = Pages)) +
+  geom_histogram(color = "white") +
+  theme_bw() +
+  labs(x = "Number of Pages", y = "Number of Lego Sets",
+       title = "Pages in Instruction Booklet") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+(pieces + pages) / (size + year)
+```
+
+
+\pagebreak
+
+### Exercise 3
+
+Because `Year` only encompasses 3 different years, it should really be treated as a factor in this model. However, it is a numerical variable in the `legos` dataframe. Thus, my first function will be using `step_dummy()` to convert `Year` into a factor variable. Next, I would want to ensure I don't have any meaningless predictors, so I would remove any predictors that have zero variance using `step_zv()`. Third, I would like to have an interpretable intercept. Thus, I will use `step_center()` on all of my numerical variables to give me a meaningful interpretation of the intercept - the price we would expect a lego set that is average in all other variables to cost.
+
+\pagebreak
+
+### Exercise 4
+
+```{r Ex-4}
+legos %>% 
+  count(Theme) %>% 
+  ggplot(aes(x = fct_reorder(Theme, n), y = n)) +
+  geom_col() + 
+    labs(title = "Lego Set Theme", 
+         x = "Theme", 
+         y = "Number of LEGO sets") + 
+  coord_flip() +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+There are simply too many levels to `Theme`. If we were to put `Theme` into our model as is, we would have some 30 different slopes associated with these different levels, and this would be entirely meaningless for some of the lego sets that only have 1 or 2 observations. Instead, we should collapse it into a meaningful number of levels using `step_other()`.
+
+\pagebreak
+
+### Exercise 5
+
+```{r Ex-5}
+set.seed(5)
+lego_split <- initial_split(legos)
+lego_train <- training(lego_split)
+lego_test <- testing(lego_split)
+
+set.seed(5)
+lego_folds <- vfold_cv(lego_train, 10)
+
+spec <- linear_reg() %>% 
+  set_engine("lm")
+```
+
+
+\pagebreak
+
+### Exercise 6
+
+```{r Ex-6}
+lego_rec <- recipe(Amazon_Price ~ Size + Theme + Pages, lego_train) %>% 
+  step_other(Theme, threshold = 20) %>% 
+  step_center(Pages) %>% 
+  step_dummy(all_nominal_predictors()) %>% 
+  step_zv(all_predictors())
+
+lego_wflow <- workflow() %>% 
+  add_model(spec) %>% 
+  add_recipe(lego_rec)
+```
+
+\pagebreak
+
+### Exercise 7
+
+```{r Ex-7}
+lego_fit_rs <- lego_wflow %>% 
+  fit_resamples(resamples = lego_folds,
+                control = control_resamples())
+
+collect_metrics(lego_fit_rs) %>% 
+  filter(.metric == 'rmse') %>% 
+  select(.metric, mean) %>% 
+  kable(col.names = c("Summary", "Mean Value"), digits = 3)
+```
+
+\pagebreak
+
+### Exercise 8
+
+```{r Ex-8}
+lego_rec2 <- recipe(Amazon_Price ~ ., lego_train) %>% 
+  step_other(Theme, threshold = 20) %>% 
+  step_center(Pages, Pieces) %>% 
+  step_mutate(since2018 = Year - 2018) %>% 
+  step_rm(Year) %>% 
+  step_dummy(all_nominal_predictors()) %>%
+  step_zv(all_predictors())
+
+lego_wflow2 <- workflow() %>% 
+  add_model(spec) %>% 
+  add_recipe(lego_rec2)
+
+lego_fit_rs2 <- lego_wflow2 %>% 
+  fit_resamples(resamples = lego_folds,
+                control = control_resamples())
+
+collect_metrics(lego_fit_rs2) %>% 
+  filter(.metric == 'rmse') %>% 
+  select(.metric, mean) %>% 
+  kable(col.names = c("Summary", "Mean Value"), digits = 3)
+```
+
+\pagebreak
+
+### Exercise 9
+
+Based on our summarized RMSE scores, we would select the second model. Its mean RMSE score across the ten folds is much lower (31.404 vs 50.753), meaning that its average error is a lot less and it is thus a better fit for the training data.
+
+\pagebreak
+
+### Exercise 10
+
+```{r Ex-10}
+lego_fit <- lego_wflow2 %>% 
+  fit(lego_train)
+
+tidy(lego_fit) %>% 
+  kable(digits = 3)
+
+lego_fit_extract <- extract_fit_parsnip(lego_fit)
+vif(lego_fit_extract$fit)
+```
+
+Our VIF values do not give us any reason for concern with multicollinearity. None of these values are above 10 or even close to it, so we do not have cause for concern.
+
+\pagebreak
+
+### Exercise 11
+
+```{r Ex-11}
+trainPred <- predict(lego_fit, lego_train) %>% 
+  bind_cols(lego_train)
+rmse(trainPred, truth = Amazon_Price, estimate = .pred)
+
+testPred <- predict(lego_fit, lego_test) %>% 
+  bind_cols(lego_test)
+rmse(testPred, truth = Amazon_Price, estimate = .pred)
+```
+
+Surprisingly, the RMSE score for the model's performance on the testing data is actually better than its score on the training data, with an RMSE score of 25.2 (compared to 28.5) suggesting the model is wrong by less, on average, on the new data. This completely avoids signs of model overfit - given that the model is actually more effective (by RMSE standards) on the new data, it is clearly versatile and adapted well to its purpose.
+
+\pagebreak
+
+### Exercise 12
+
+Many different categories within `Theme` have a significant impact on the price of a lego set. Compared to the baseline of a `Theme` City, we would expect a lego set from NINJAGO to cost \$17.166 less, on average, holding all else constant (significant at the $\alpha$ = .05 level, p = .033). Compared to the baseline of a City `Theme` lego set, we would expect a legoset from a theme that is not Star Wars, Friends, or NINJAGO to cost \$15.755 less, on average, holding all else constant (significant at the $\alpha$ = .05 level, p = .011).
+
+The other two `Theme` categories are not statistically significant. Compared to the baseline of a City `Theme` lego set, we would expect a Friends `Theme` lego set to cost \$13.581 less, on average, holding all else constant. However, this effect is not significant at the $\alpha$ = .05 level (p = .079). Compared to the baseline of a City `Theme` lego set, we would expect a Star Wars `Theme` lego set to cost \$3.131 less, on average, holding all else constant. However, this effect is not significant at the $\alpha$ = .05 level (p = .690).

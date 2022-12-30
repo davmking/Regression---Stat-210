@@ -1,0 +1,276 @@
+---
+title: "Lab 04: The Office"
+subtitle: "Feature engineering"
+author: "Stats is 'Fun': Thomas Barker, Dav King, Harry Liu"
+date: "`r Sys.Date()`"
+format: pdf
+editor: visual
+---
+
+## Setup
+
+Load packages and data:
+
+```{r load-packages}
+#| message: false
+#| warning: false
+
+library(tidyverse)
+library(tidymodels)
+library(schrute) #install.packages("schrute")
+library(lubridate)
+library(knitr)
+
+```
+
+### **\[Select this page for the "Workflow & formatting" and "Team agreement" sections in Gradescope.** \]
+
+\pagebreak
+
+## Exercises
+
+```{r air_date-to-date}
+theoffice <- theoffice |>
+  mutate(air_date = ymd(as.character(air_date)))
+```
+
+### Exercise 1
+
+```{r holidays}
+theoffice <- theoffice |>
+  mutate(
+    text = str_to_lower(text),
+    halloween_mention = if_else(str_detect(text, "halloween"), 1, 0),
+    valentine_mention = if_else(str_detect(text, "valentine"), 1, 0),
+    christmas_mention = if_else(str_detect(text, "christmas"), 1, 0)
+  )
+```
+
+\pagebreak
+
+### Exercise 2
+
+```{r row-per-episode}
+office_episodes <- theoffice |>
+  group_by(season, episode, episode_name, imdb_rating, total_votes, air_date) |>
+  summarize(
+    n_lines = n(),
+    lines_jim = sum(character == "Jim") / n_lines,
+    lines_pam = sum(character == "Pam") / n_lines,
+    lines_michael = sum(character == "Michael") / n_lines,
+    lines_dwight = sum(character == "Dwight") / n_lines,
+    halloween = if_else(sum(halloween_mention) >= 1, "yes", "no"),
+    valentine = if_else(sum(valentine_mention) >= 1, "yes", "no"),
+    christmas = if_else(sum(christmas_mention) >= 1, "yes", "no"),
+    .groups = "drop"
+  ) |>
+  select(-n_lines)
+office_episodes
+```
+
+\pagebreak
+
+### Exercise 3
+
+```{r michael scott}
+office_episodes <- office_episodes |>
+  mutate(michael = if_else(season > 7, "no", "yes"))
+```
+
+...
+
+\pagebreak
+
+### Exercise 4
+
+```{r dimensions}
+dim(office_episodes)
+names(office_episodes)
+```
+
+### EDA
+
+```{r EDA 1, fig.height = 9}
+office_episodes %>% 
+  pivot_longer(cols = starts_with("lines_"), names_to = "character",
+               names_prefix = "lines_", values_to = "proportion") %>% 
+  ggplot(aes(x = episode, y = proportion, color = character)) +
+  geom_line(size = 1) +
+  facet_wrap(~season, scales = "free_x") +
+  theme_bw() +
+  labs(x = "Episode", y = "Proportion of Lines Spoken", color = "Character",
+       title = "Proportion of Lines Spoken by Office Characters Over Time") +
+  theme(plot.title = element_text(hjust = 0.5), legend.position = "bottom")
+```
+
+\pagebreak
+
+```{r EDA 2}
+ggplot(office_episodes, aes(x = imdb_rating)) +
+  geom_histogram(color = "white") +
+  theme_bw() +
+  labs(x = "IMDB Rating", y = "Number of Episodes",
+       title = "Distribution of IMDB Ratings for Office Episodes") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+fivenum(office_episodes$imdb_rating)
+min(office_episodes$imdb_rating)
+max(office_episodes$imdb_rating)
+mean(office_episodes$imdb_rating)
+sd(office_episodes$imdb_rating)
+
+office_episodes %>% 
+  mutate(halloween = if_else(halloween == "no", 0, 1),
+         valentine = if_else(valentine == "no", 0, 1),
+         christmas = if_else(christmas == "no", 0, 1)) %>% 
+  summarize(halloween_prop = mean(halloween),
+            valentine_prop = mean(valentine),
+            christmas_prop = mean(christmas))
+```
+
+...
+
+\pagebreak
+
+### Exercise 5
+
+```{r training and test data}
+set.seed(123)
+office_split <- initial_split(office_episodes)
+office_train <- training(office_split)
+office_test <- testing(office_split)
+```
+
+...
+
+\pagebreak
+
+### Exercise 6
+
+```{r lm}
+
+office_spec <- linear_reg() |>
+  set_engine("lm")
+
+office_spec
+```
+
+\pagebreak
+
+### Exercise 7
+
+```{r recipe}
+office_rec <- recipe(imdb_rating ~ ., data = office_train) |>
+  update_role(episode_name, new_role = "ID") |>
+  step_rm(air_date, season) |>
+  step_dummy(all_nominal_predictors()) |>
+  step_zv(all_predictors())
+office_rec
+```
+
+\pagebreak
+
+### Exercise 8
+
+```{r workflow}
+office_wflow <- workflow() |>
+  add_model(office_spec) |>
+  add_recipe(office_rec)
+```
+
+\pagebreak
+
+### Exercise 9
+
+```{r model-fit}
+office_fit <- office_wflow |>
+  fit(data = office_train)
+
+tidy(office_fit) %>% 
+  kable(digits = 3)
+```
+
+If an episode mentions the word "halloween", we would expect it to have an IMDB rating that is 0.177 points lower, on average, than episodes that do not mention the word "halloween", holding all other predictors constant.
+
+If an episode mentions the word "christmas", we would expect it to have an IMDB rating that is 0.199 points higher, on average, than episodes that do not mention the word "christmas", holding all other predictors constant.
+
+\pagebreak
+
+### Exercise 10
+
+```{r predicted-rating}
+office_train_pred <- predict(office_fit, office_train) |>
+  bind_cols(office_train)
+
+unusual_office <- office_train_pred |>
+  filter(imdb_rating < 7 | imdb_rating > 9.5)
+
+office_train_pred |>
+  ggplot(aes(x = .pred, y = imdb_rating, label = episode_name)) +
+  geom_point() +
+  geom_text(data = unusual_office, size = 2, nudge_x = -0.15, nudge_y = -0.1) +
+  labs(x = "Predicted IMDb Rating",
+       y = "Observed IMDb Rating",
+       title = "Predicted vs. Observed IMDB Ratings")
+```
+
+\pagebreak
+
+### Exercise 11
+
+```{r model-strength}
+rsq(office_train_pred, truth = imdb_rating, estimate = .pred)
+rmse(office_train_pred, truth = imdb_rating, estimate = .pred)
+```
+
+-   The $R^2$ of 0.614 tells us that, based on our training data, 61.4% of the variability in IMDB rating can be explained by the predictors in our model.
+
+-   The RMSE of 0.3176 tells us that, based on our training data, on average, the error in predicted IMDB rating is 0.318 points.
+
+\pagebreak
+
+### Exercise 12
+
+```{r prediction on testing data}
+office_test_pred <- predict(office_fit, office_test) %>% 
+  bind_cols(office_test)
+
+unusual_office_test <- office_test_pred %>% 
+  filter(imdb_rating < 7 | imdb_rating > 9.5)
+
+office_test_pred |>
+  ggplot(aes(x = .pred, y = imdb_rating, label = episode_name)) +
+  geom_point() +
+  geom_text(data = unusual_office_test,
+            size = 2, nudge_x = -0.15, nudge_y = -0.1) +
+  labs(x = "Predicted IMDB Rating",
+       y = "Observed IMDB Rating",
+       title = "Predicted vs. Observed IMDB Ratings") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+...
+
+\pagebreak
+
+### Exercise 13
+
+Based on the visualization created in exercise 12, we would expect the $R^2$ for this model to be lower for predictions on the testing data compared to the training data. This is because the model was created on the training data; thus, it is designed to explain as much of the variance in the training data as possible. However, because the testing data differs somewhat from the training data, the model will not be able to explain as much of the variance in the testing data. Similarly, we would expect the RMSE for this model to be higher for predictions on the testing data compared to the training data. The model was designed to minimize error on the training data; however, because the testing data differ, we would expect to see more error in this model's predictions for the testing data.
+
+...
+
+\pagebreak
+
+### Exercise 14
+
+```{r rsq and rmse for test data}
+rsq(office_test_pred, truth = imdb_rating, estimate = .pred)
+rmse(office_test_pred, truth = imdb_rating, estimate = .pred)
+```
+
+*This answer presumes that there was an error in the lab's writing, and we should indeed be calculating $R^2$ and RMSE for predictions on the testing, not training, data. We calcluated these values on the testing data in exercise 11, and this flows more logically from exercise 13.*
+
+These data confirm that our intuition was correct. The $R^2$ value for predictions from this model on the testing data was 0.461, suggesting that 46.1% of the variance in IMDB ratings in the testing data can be explained by the predictors in this model - notably less than the 61.4% of variance explained by this model on the training data. Similarly, the RMSE value for predictions from this model on the testing data was 0.447, suggesting that on average, the error in predicted IMDB rating in our testing data is 0.447 points - notably more than our average error of 0.318 points in predicted IMDB rating for our training data.
+
+...

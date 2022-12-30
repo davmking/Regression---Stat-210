@@ -1,0 +1,277 @@
+---
+title: "Lab 07: General Social Survey"
+subtitle: "Logistic regression"
+author: "Stats is 'Fun' - Dav King, Luke Thomas, Thomas Barker, Harry Liu"
+date: "11/11/22"
+format: pdf
+editor: visual
+header-includes:
+  \usepackage{fvextra}
+  \DefineVerbatimEnvironment{Highlighting}{Verbatim}{breaklines,commandchars=\\\{\}}
+---
+
+## Setup
+
+Load packages and data
+
+```{r load-packages-data}
+#| message: false
+#| warning: false
+
+# add packages + data
+
+library(tidyverse)
+library(tidymodels)
+library(knitr)
+
+gss <- read_csv("data/gss2016.csv") |>
+  mutate(polviews = case_when(polviews == 'Extrmly conservative' ~ 'Extremely conservative',
+                              polviews == 'Slghtly conservative' ~ 'Slightly conservative',
+                              TRUE ~ polviews))
+```
+
+### **\[Select this page for the "Workflow & formatting" in Gradescope.** \]
+
+\pagebreak
+
+## Exercises
+
+### Exercise 1
+
+```{r Ex-1}
+gss <- gss %>% 
+  mutate(transit = factor(if_else(natmass == "About right", 1, 0)))
+ggplot(gss, aes(x = transit)) +
+  geom_bar() +
+  scale_x_discrete(labels = c("Too Much/Too Little", "About Right")) +
+  theme_bw() +
+  labs(x = "Views on Transit Spending", y = "Number of Respondents",
+       title = "American Views on Mass Transit Spending", subtitle = "GSS Respondents") +
+  theme(plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5))
+```
+
+\pagebreak
+
+### Exercise 2
+
+```{r recode-polviews}
+
+gss <- gss |>
+  mutate(polviews = factor(polviews, levels = c("Extremely liberal",
+                                                   "Liberal", 
+                                                   "Slightly liberal",
+                                                   'Moderate',
+                                                   'Slightly conservative',
+                                                   'Conservative',
+                                                   'Extremely conservative')))
+ggplot(data = gss, aes(y=polviews)) +
+  geom_bar() +
+  labs(x = 'Count',
+       y = 'Political View',
+       title = 'Distribution of Political Views')
+```
+
+Moderate political view occurs most frequently in this data set.
+
+\pagebreak
+
+### Exercise 3
+
+```{r stacked_bar_chart}
+ggplot(data = gss, aes(fill=transit, x=polviews)) + 
+    geom_bar(position="fill") +
+    labs(title = "Mass Transit Spending Satisfaction by Ideology", 
+         x = "Political views", y = "Percentage") +
+    scale_fill_discrete(name = "Satisfaction", labels = c("unsatisfied", "satisfied")) +
+    coord_flip() 
+```
+
+As a person's political view becomes more liberal, the percentage of people that are satisfied with mass transportation spending generally decreases, while the percentage of people that are unsatisfied (either think its too much or too little) with mass transportation spending generally increases.
+
+\pagebreak
+
+### Exercise 4
+
+```{r age-to-numeric}
+gss <- gss |>
+  mutate(age = if_else(age == "89 or older", "89", age))
+
+gss <- gss |>
+  mutate_at('age', as.numeric)
+```
+
+```{r age-distribution}
+gss |>
+  ggplot(aes(x = age)) +
+  geom_histogram(bins = 30) +
+  labs(x = "Age",
+       y = "Frequency",
+       title = "Distribution of Age")
+```
+
+\pagebreak
+
+### Exercise 5
+
+Satisfaction with spending on mass transportation is a binary response variable. Thus, we want a model that will run between satisfaction and dissatisfaction, without trying to make linear regression predictions that are much less meaningful. Using a logistic regression model, we can predict the odds that a randomly selected person is satisfied with spending on mass transit - giving us much more meaningful and nuanced conclusions than we would get by simply classifying people into either "satisfied" or "unsatisfied" without these odds.
+
+\pagebreak
+
+### Exercise 6
+
+```{r Ex-6}
+set.seed(6)
+gss_split <- initial_split(gss)
+gss_train <- training(gss_split)
+gss_test <- testing(gss_split)
+```
+
+\pagebreak
+
+### Exercise 7
+
+```{r model}
+gss_spec <- logistic_reg() |>
+  set_engine('glm')
+
+gss_rec1 <- recipe(transit ~ age + sex + sei10 + region, data = gss_train) |>
+  step_center(all_numeric_predictors())
+
+gss_wflow1 <- workflow() |>
+  add_model(gss_spec) |>
+  add_recipe(gss_rec1)
+
+gss_fit <- gss_wflow1 |>
+  fit(gss_train)
+
+tidy(gss_fit) |>
+  kable(digits = 3)
+```
+
+\pagebreak
+
+### Exercise 8
+
+For a person who is female, lives in the east north central region of the country, is the mean age of \~48.6 years, and has the mean SEI10 score of \~46.02, the odds of being satisfied with spending on mass transportation are expected to be 1.340 (exp(0.293)).
+
+For each additional year in age, the odds of being satisfied with spending on mass transportation are expected to multiply by a factor of 0.994 (exp(-0.006)), holding sex, region, and SEI10 constant.
+
+\pagebreak
+
+### Exercise 9
+
+```{r model-2}
+views_spec <- logistic_reg() |>
+  set_engine('glm')
+
+views_rec <- recipe(transit ~ age + sex + sei10 + region + polviews, data = gss_train) |>
+  step_center(all_numeric_predictors())
+
+views_wflow <- workflow() |>
+  add_model(views_spec) |>
+  add_recipe(views_rec)
+
+views_fit <- views_wflow |>
+  fit(gss_train)
+
+tidy(views_fit) |>
+  kable(digits = 3)
+```
+
+\pagebreak
+
+### Exercise 10
+
+```{r predictions}
+gss_pred <- predict(gss_fit, gss_test, type = "prob") |> 
+  bind_cols(gss_test) 
+gss_pred
+
+views_pred <- predict(views_fit, gss_test, type = "prob") |>
+  bind_cols(gss_test)
+views_pred
+```
+
+```{r roc-curve}
+gss_pred |>
+  roc_curve(
+    truth = transit,
+    .pred_1,
+    event_level = "second"
+  ) |>
+  autoplot()
+
+views_pred |>
+  roc_curve(
+    truth = transit,
+    .pred_1,
+    event_level = "second"
+  ) |>
+  autoplot()
+```
+
+```{r auc}
+gss_pred |>
+  roc_auc(
+    truth = transit,
+    .pred_1,
+    event_level = "second"
+  )
+
+views_pred |>
+  roc_auc(
+    truth = transit,
+    .pred_1,
+    event_level = "second"
+  )
+```
+
+The model that includes political views as a predictor is a better fit, because its AUC is closer to 1 than the model that doesn't include political views as a predictor (.573 \> .541).
+
+\pagebreak
+
+### Exercise 11
+
+```{r ROC}
+views_pred |>
+  roc_curve(
+    truth = transit,
+    .pred_1,
+    event_level = "second"
+  )
+```
+
+We would use a cutoff probability of 55.70% to classify observations in \"satisfied with mass transportation spending\" versus \"not satisfied\".
+
+Reasoning: Under such a circumstance when the political organization wants to send political mailings only to the adults who are currently satisfied with current spending on mass transportation while avoiding to send the mailing to those who are not satisfied, the best scenario is to try to seek a balanced solution where both sensitivity and specificity is taken into consideration - that been said, we want to find a cutoff where both sensitivity and specificity could be considerably high (we don't want high false negative as we don't want to miss sending emails to people that are in reality satisfied, but we also don't want high false positive as we don't want to send political mailing to the wrong people). Placing sensitivity and specificity at the same importance, we decide to choose a cutoff probability that have the same sensitively and specificity. And by checking the table, we found that at a cutoff probability of 55.70%, the sensitivity and specificity are the closest (sensitivity \~56.59%, specificity \~56.68).
+
+\pagebreak
+
+### Exercise 12
+
+```{r cut_off}
+
+cutoff_prob <- 0.5570
+views_pred |>
+  mutate(views_predicted = as_factor(if_else(.pred_1 >= cutoff_prob, 1, 0))) |>
+  conf_mat(truth = transit, estimate = views_predicted)
+```
+
+```{r matrices}
+sensitivity <- 190 / (147 + 190)
+sensitivity
+specificity <- 176 / (135 + 176)
+specificity
+false_nagative <- 147 / (147 + 190)
+false_nagative
+false_positive <- 135 / (135 + 176)
+false_positive
+```
+
+-   Sensitivity = 190 / (147 + 190) = 56.38%
+
+-   Specificity = 176 / (135 + 176) = 56.59%
+
+-   False negative rate = 147 / (147 + 190) = 43.62%
+
+-   False positive rate = 135 / (135 + 176) = 43.41%

@@ -1,0 +1,183 @@
+---
+title: "Lab 01: Ikea furniture"
+subtitle: "Simple linear regression"
+author: "Dav King"
+date: "`r Sys.Date()`"
+format: pdf
+editor: visual
+---
+
+## Setup
+
+Load packages and data:
+
+```{r load-pkg-data}
+#| message: false
+library(tidyverse)
+library(tidymodels)
+library(ggridges)
+library(cowplot)
+ikea <- read_csv("data/ikea.csv")
+```
+
+\pagebreak
+
+## Exercises
+
+### Exercise 1
+
+```{r glimpse-data}
+glimpse(ikea)
+```
+
+The `ikea` dataset has 3694 observations and 13 variables.
+
+\pagebreak
+
+### Exercise 2
+
+```{r ex-2}
+ggplot(ikea, aes(x = price_usd)) +
+  geom_histogram() +
+  labs(x = "Price in USD", y = "Number of Items",
+       title = "Distribution of Cost of IKEA Items") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+
+\pagebreak
+
+### Exercise 3
+
+The distribution of prices is highly right-skewed, with a modal peak around 100-150 and a spread from ~0 to 2500. There are plenty of outliers - really any value over 1000 probably is, but there are a number of items that cost over $2000 that would all easily be considered outliers. Because the data are skewed, the median is much more representative than the mean - the presence of highly weighted outliers would cause the mean to be much higher than where most of the data sit, whereas the median is unaffected by these outliers and would instead show the true "middle" value of the data.
+
+\pagebreak
+
+### Exercise 4
+
+```{r ex-4}
+ikea_sub <- ikea %>% 
+  filter(category %in% c("Tables & desks", "Beds",
+                         "Bookcases & shelving units", "Sofas & armchairs"))
+```
+
+There are 1796 observations of 13 variables in the new dataset.
+
+\pagebreak
+
+### Exercise 5
+
+```{r ex-5, fig.height = 10}
+densityPlot <- ggplot(ikea_sub, aes(x = price_usd, fill = category)) + 
+  geom_density(alpha = 0.3) +
+  theme_bw() +
+  labs(x = "Price in USD", y = "Density of Items", 
+       title = "Density of IKEA Items by Price", fill = "Item Category") +
+  theme(plot.title = element_text(hjust = 0.5), legend.position = "bottom") +
+  guides(fill = guide_legend(nrow = 2))
+
+densityRidgePlot <- ggplot(ikea_sub, aes(x = price_usd, y = category,
+                                         fill = category)) +
+  geom_density_ridges(alpha = 0.5) +
+  theme_bw() +
+  labs(x = "Price in USD", y = "Density of Items by Category",
+       title = "Density of IKEA Items by Price") +
+  theme(plot.title = element_text(hjust = 0.5), legend.position = "none")
+
+plot_grid(densityPlot, densityRidgePlot, nrow = 2)
+```
+
+\pagebreak
+
+### Exercise 6
+
+We defined the fill within aesthetics because we wanted fill to take on different values based on a certain variable. We defined alpha within `geom` and not `aes`, however, because we wanted alpha to be a value we set ourselves and not a value dependent upon some characteristic of the data.
+
+\pagebreak
+
+### Exercise 7
+
+```{r ex-7}
+ggplot(ikea_sub, aes(x = price_usd, y = category, fill = category)) +
+  geom_boxplot() +
+  labs(x = "Price in USD", y = "Category",
+       title = "Distribution of Price, Different Types of IKEA Items") +
+  theme_bw() +
+  theme(legend.position = "none", plot.title = element_text(hjust = 0.5))
+```
+
+
+\pagebreak
+
+### Exercise 8
+
+My boxplot and the original density plot are both great at showing off where the data tend to be concentrated for each category, and especially their right-tailed skew and numerous outliers. The boxplot is better at showing off where the median lies for each category and explicitly designating which data points are outliers within each category. However, the density plot is better at showing off the sheer number of items concentrated at lower price points.
+
+\pagebreak
+
+### Exercise 9
+
+```{r ex-9}
+sofas <- ikea_sub %>% 
+  filter(category == "Sofas & armchairs") %>% 
+  drop_na(width, price_usd)
+```
+
+There are 273 observations of 13 variables in `sofas`.
+
+\pagebreak
+
+### Exercise 10
+
+```{r ex-10}
+ggplot(sofas, aes(x = width, y = price_usd)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = F) +
+  theme_bw() +
+  labs(x = "Width in CM", y = "Price in USD",
+title = "Relationship between Width and Price of Sofas and Armchairs at IKEA") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+There is a fairly strong positive linear relationship between width and price of sofas and armchairs at IKEA.
+
+\pagebreak
+
+### Exercise 11
+
+```{r ex-11}
+priceModel <- linear_reg() %>% 
+  set_engine("lm") %>% 
+  fit(price_usd ~ width, data = sofas)
+tidy(priceModel)
+```
+
+
+\pagebreak
+
+### Exercise 12
+
+$$\hat{price\_usd} = -245.671 +  5.368 \times width$$
+
+\pagebreak
+
+### Exercise 13
+
+For each 1cm increase in the sofa or armchair's width, we would expect to see an increase in price of $5.368. The intercept is not meaningful - we would not expect a couch to be free, and we definitely can't have one with a width of -246 centimeters.
+
+\pagebreak
+
+### Exercise 14
+
+```{r ex-14}
+glance(priceModel)$r.squared
+aug <- augment(priceModel$fit)
+rmse(aug, truth = price_usd, estimate = .fitted)$.estimate
+```
+
+The $R^2$ value for this model is `r glance(priceModel)$r.squared %>% round(3)`, which means that `r glance(priceModel)$r.squared %>% round(5) * 100`% of the variance in price can be explained by the width of the couch/armchair - a very reasonable value. The RMSE of the model is `r rmse(aug, truth = price_usd, estimate = .fitted)$.estimate %>% round(3)`, which means that \$`r rmse(aug, truth = price_usd, estimate = .fitted)$.estimate %>% round(2)` is the square root of the average of squared differences between the price that our model predicts based off of an item's width and its actual recorded price at that width. In other words, it is our average residual, or the absolute value by which our model errs in its predictions on average.
+
+The $R^2$ value of this model suggests that the linear model we have created is a good fit for the data - our one predictor being able to explain over 70% of the variance in price suggests a good fit for the data. Unfortunately, the RMSE doesn't tell us much about whether this model is a good fit for the data - it would work a lot better if we had other models to compare it to, but a standalone RMSE can't tell us much. Still, from the good $R^2$ value, we can say that this model is a good fit for the data - not perfect, since we still cannot explain nearly 30% of the variance in price, but still a fairly strong predictor.
+
+(Note: I did indeed know what the values were that I was writing about, I just wrote them with inline code instead to practice.)
