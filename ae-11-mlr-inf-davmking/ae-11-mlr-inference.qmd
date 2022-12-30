@@ -1,0 +1,114 @@
+---
+title: "AE 11: MLR Inference + conditions"
+subtitle: "Trail riders"
+date: "Oct 26, 2022"
+format: pdf
+editor: visual
+---
+
+::: callout-important
+The AE is due on GitHub by Saturday, October 29 at 11:59pm.
+:::
+
+## Packages
+
+```{r}
+#| message: false
+#| warning: false 
+
+library(tidyverse)
+library(tidymodels)
+library(knitr)
+```
+
+## Data
+
+```{r}
+#| message: false
+#| warning: false 
+
+rail_trail <- read_csv("data/rail_trail.csv")
+```
+
+## Exercise 1
+
+Below is the model predicting `volume` from `hightemp` and `season`.
+
+```{r}
+rt_mlr_main_fit <- linear_reg() %>%
+  set_engine("lm") %>%
+  fit(volume ~ hightemp + season, data = rail_trail)
+
+tidy(rt_mlr_main_fit) |>
+  kable(digits = 2)
+```
+
+Add an interaction effect between `hightemp` and `season` to the model. Do the data provide evidence of a significant interaction effect? Comment on the significance of the interaction terms.
+
+```{r}
+#| label: model-with-interaction
+
+interact <- linear_reg() %>% 
+  set_engine("lm") %>% 
+  fit(volume ~ hightemp + season + hightemp*season, data = rail_trail)
+
+tidy(interact) %>% 
+  kable(digits = 3)
+```
+
+These data, surprisingly, do not provide evidence of a significant interaction effect. The p-value of hightemp * Spring and Summer are .138 and .230, respectively.
+
+```{r}
+glance(rt_mlr_main_fit) %>% 
+  select(adj.r.squared, AIC, BIC)
+glance(interact) %>% 
+  select(adj.r.squared, AIC, BIC)
+```
+
+
+## Exercise 2
+
+Below is the model predicting `volume` from all available predictors.
+
+```{r}
+#| label: full-model
+
+rt_full_fit <- linear_reg() %>%
+  set_engine("lm") %>%
+  fit(volume ~ ., data = rail_trail)
+
+tidy(rt_full_fit) |>
+kable(digits = 2)
+```
+
+Fill in the code to plot the histogram of residuals with an overlay of the normal distribution based on the results of the model.
+
+::: callout-note
+Update to `eval: true` once the code is updated.
+:::
+
+```{r}
+#| label: dist-of-residuals
+#| eval: true 
+
+
+rt_full_aug <- augment(rt_full_fit$fit)
+
+ggplot(rt_full_aug, aes(.resid)) +
+  geom_histogram(aes(y = after_stat(density)), binwidth = 50) +
+  stat_function(
+    fun = dnorm, 
+    args = list(mean = mean(rt_full_aug$.resid), sd = sd(rt_full_aug$.resid)), 
+    lwd = 2, 
+    color = "red"
+  )
+```
+
+# Submission
+
+::: callout-important
+To submit the AE:
+
+-   Render the document to produce the PDF with all of your work from today's class.
+-   Push all your work to your `ae-11-` repo on GitHub. (You do not submit AEs on Gradescope).
+:::

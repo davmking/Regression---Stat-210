@@ -1,0 +1,159 @@
+---
+title: "AE 03: Bootstrap confidence intervals"
+subtitle: "Houses in Duke Forest"
+author: "Dav King"
+date: "Sep 12, 2022"
+format: pdf
+editor: visual
+---
+
+```{r load-packages}
+#| message: false
+library(tidyverse)
+library(tidymodels)
+library(openintro)
+library(knitr)
+```
+
+## Data
+
+The data are on houses that were sold in the Duke Forest neighborhood of Durham, NC around November 2020. It was originally scraped from Zillow, and can be found in the `duke_forest` data set in the **openintro** R package.
+
+```{r glimpse-data}
+glimpse(duke_forest)
+```
+
+## Exploratory data analysis
+
+```{r scatterplot}
+ggplot(duke_forest, aes(x = area, y = price)) +
+  geom_point(alpha = 0.7) +
+  labs(
+    x = "Area (square feet)",
+    y = "Sale price (USD)",
+    title = "Price and area of houses in Duke Forest"
+  ) +
+  scale_y_continuous(labels = label_dollar()) 
+```
+
+## Model
+
+```{r fit-model}
+df_fit <- linear_reg() |>
+  set_engine("lm") |>
+  fit(price ~ area, data = duke_forest)
+
+tidy(df_fit) |>
+  kable(digits = 2)
+```
+
+## Bootstrap confidence interval
+
+### 1. Calculate the observed fit (slope)
+
+```{r set-seed}
+
+observed_fit <- duke_forest |>
+  specify(price ~ area) |>
+  fit()
+
+observed_fit
+```
+
+### 2 Take *n* bootstrap samples and fit models to each one.
+
+Fill in the code, then set `eval: true` .
+
+```{r bootstrap}
+#| eval: true
+
+n = 100
+set.seed(091222)
+
+boot_fits <- duke_forest |>
+  specify(price ~ area) |>
+  generate(reps = n, type = "bootstrap") |>
+  fit()
+
+boot_fits
+```
+
+-   Why do we set a seed before taking the bootstrap samples?
+
+We set a seed so that the "random" values that R is taking here are replicated the exact same way every time that the .qmd file is run. In other words, we have a fixed set of random numbers, and the seed means that we will generate the exact same bootstrap samples every single time.
+
+-   Make a histogram of the bootstrap samples to visualize the bootstrap distribution.
+
+    ```{r boot-hist}
+boot_fits %>% 
+      group_by(replicate) %>% 
+      ggplot(aes(x = estimate)) +
+      geom_histogram() +
+      facet_wrap(~ term, scales = "free") +
+      theme_bw() +
+      labs(x = "Estimate", y = "Number of Samples",
+           title = "Distribution of Bootstrap Sample Estimates") +
+      theme(plot.title = element_text(hjust = 0.5))
+    ```
+
+### 3 Compute the 95% confidence interval as the middle 95% of the bootstrap distribution
+
+Fill in the code, then set `eval: true` .
+
+```{r calc-ci}
+#| eval: true
+
+get_confidence_interval(
+  boot_fits, 
+  point_estimate = observed_fit, 
+  level = .95,
+  type = "percentile"
+)
+```
+
+## Changing confidence level
+
+### Modify the code from Step 3 to create a 90% confidence interval.
+
+```{r 90-ci}
+get_confidence_interval(
+  boot_fits, 
+  point_estimate = observed_fit, 
+  level = .90,
+  type = "percentile"
+)
+```
+
+### Modify the code from Step 3 to create a 99% confidence interval.
+
+```{r 99-ci}
+get_confidence_interval(
+  boot_fits, 
+  point_estimate = observed_fit, 
+  level = .99,
+  type = "percentile"
+)
+```
+
+-   Which confidence level produces the most accurate confidence interval (90%, 95%, 99%)? Explain
+
+The most accurate confidence interval is at 99% - we are the most confident that the 99% interval contains our actual population parameter compared to the other two.
+
+-   Which confidence level produces the most precise confidence interval (90%, 95%, 99%)? Explain
+
+The most precise confidence interval is the 90% confidence interval. At 90%, we have the most narrow range for our interval - there's a higher chance that the actual population parameter falls outside of this interval compared to the others, but this gives us a more precise estimate compared to the others because it holds a less inclusive range.
+
+-   If we want to be very certain that we capture the population parameter, should we use a wider or a narrower interval? What drawbacks are associated with using a wider interval?
+
+We want to use a wider interval (a higher confidence level) in order to be more sure that we will capture the true population parameter. The wider the interval around our point estimate, the more likely we are to calculate an interval that contains the actual population parameter. However, this has a major drawback - with increased accuracy comes lower precision. The wider our interval gets, the less accurate of an estimate we have for what our population parameter actually is - even if we're more confident that it's contained within the interval in the first place.
+
+-   If we want to be very certain that we capture the population parameter, should we use a wider or a narrower interval? What drawbacks are associated with using a wider interval?
+
+This is a duplicate question :)
+
+::: callout-important
+To submit the AE:
+
+-   Render the document to produce the PDF with all of your work from today's class.
+-   Push all your work to your `ae-03-` repo on GitHub. (You do not submit AEs on Gradescope).
+:::
